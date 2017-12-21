@@ -1,0 +1,15 @@
+name: hellocicd
+replicas: 5
+image: rtnpro/hellocicd:master
+release: master
+env: production
+port: 5000
+
+serviceType: NodePort
+
+# canary:
+#   replicas: 1
+#   image: rtnpro/hellocicd:canary
+#   release: canary
+
+# domain: hellocicd.example.com

@@ -1,0 +1,64 @@
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: {{ .Values.name }}
+spec:
+  replicas: {{ .Values.replicas }}
+  template:
+    metadata:
+      name: {{ .Values.name }}
+      labels:
+        app: {{ .Values.name }}
+        role: backend
+        env: {{ .Values.env }}
+    spec:
+      containers:
+      - image: {{ .Values.image }}
+        name: hellocicd
+        ports:
+        - containerPort: 5000
+        env:
+        - name: RELEASE
+          value: {{ .Values.release }}
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        workingDir: /src
+{{- if .Values.canary }}
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: {{ .Values.name }}-canary
+spec:
+  replicas: {{ .Values.canary.replicas }}
+  template:
+    metadata:
+      name: {{ .Values.name }}-canary
+      labels:
+        app: {{ .Values.name }}
+        role: backend
+        env: canary
+    spec:
+      containers:
+      - image: {{ .Values.canary.image }}
+        name: hellocicd
+        ports:
+        - containerPort: 5000
+        env:
+        - name: RELEASE
+          value: {{ .Values.canary.release }}
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        workingDir: /src
+{{- end }}

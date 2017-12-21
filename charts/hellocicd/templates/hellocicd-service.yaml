@@ -1,0 +1,14 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: {{ .Values.name }}
+spec:
+  ports:
+  - name: {{ .Values.name }}
+    port: {{ .Values.port }}
+    targetPort: 5000
+    protocol: TCP
+  selector:
+    role: backend
+    app: {{ .Values.name }}
+  type: {{ .Values.serviceType }}
