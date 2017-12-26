@@ -13,107 +13,107 @@ podTemplate(
 ){
     node('jenkins-pipeline') {
 
-      def project = "rtnpro"
-      def appName = "hellocicd"
+        def project = "rtnpro"
+        def appName = "hellocicd"
 
-      def release = env.BRANCH_NAME
-      def imageTag = "docker.io/${project}/${appName}:${release}"
-      def domain = "${appName}-${release}${env.HELLOCICD_DOMAIN}"
-      def environ = "staging"
-      def namespace = "${appName}-${release}"
-      def helmRelease = namespace
-      def replicas = 2
+        def release = env.BRANCH_NAME
+        def imageTag = "docker.io/${project}/${appName}:${release}"
+        def domain = "${appName}-${release}${env.HELLOCICD_DOMAIN}"
+        def environ = "staging"
+        def namespace = "${appName}-${release}"
+        def helmRelease = namespace
+        def replicas = 2
 
-      def prodRelease = "master"
-      def prodImageTag = "docker.io/${project}/${appName}:${prodRelease}"
-      def prodDomain = "${appName}${env.HELLOCICD_DOMAIN}"
-      def prodEnviron = "production"
-      def prodNamespace = "${appName}"
-      def prodHelmRelease = prodNamespace
+        def prodRelease = "master"
+        def prodImageTag = "docker.io/${project}/${appName}:${prodRelease}"
+        def prodDomain = "${appName}${env.HELLOCICD_DOMAIN}"
+        def prodEnviron = "production"
+        def prodNamespace = "${appName}"
+        def prodHelmRelease = prodNamespace
 
-      if (env.BRANCH_NAME == 'master') {
-        imageTag = prodImageTag
-        domain = prodDomain
-        environ = prodEnviron
-        release = prodRelease
-        namespace = prodNamespace
-        helmRelease = prodHelmRelease
-      }
-
-      checkout scm
-
-      stage('Build') {
-          sh "docker build -t ${imageTag} ."
-      }
-
-      stage('Test') {
-        println "No tests yet :)"
-      }
-
-      stage('Deliver') {
-        withCredentials([[$class: 'UsernamePasswordMultiBinding',
-            credentialsId: 'rtnpro-docker-creds',
-            usernameVariable: 'username',
-            passwordVariable: 'password']]) {
-          sh "docker login -u ${username} -p ${password}"
-          sh "docker push ${imageTag}"
-        }
-      }
-
-      stage('Deploy') {
-        container('helm') {
-          sh """
-             helm upgrade --install ${helmRelease} \
-             charts/hellocicd \
-             --namespace ${namespace} \
-             -f charts/hellocicd/Values.yaml --set \
-             serviceType=LoadBalancer,image=${imageTag},domain=${domain},env=${environ},release=${release},replicas=${replicas}
-              """
-        }
-      }
-
-      if (env.BRANCH_NAME == 'master') {
-        return  
-      }
-
-      input(message: 'Do you want to proceed with canary?')
-
-      stage('Canary') {
-        container('helm') {
-          sh """
-             helm upgrade --install ${prodHelmRelease} \
-             charts/hellocicd \
-             --namespace ${prodNamespace} \
-             -f charts/hellocicd/Values.yaml --set \
-             serviceType=LoadBalancer,image=${prodImageTag},domain=${prodDomain},env=${prodEnviron},release=${prodRelease},replicas=${replicas},canary.replicas=1,canary.release=${release},canary.image=${imageTag}
-              """
-        }
-      }
-
-      input(message: 'Test canary changes? Rollback canary?')
-
-      stage('Rollback canary') {
-        container('helm') {
-          sh """
-             helm upgrade --install ${prodHelmRelease} \
-             charts/hellocicd \
-             --namespace ${prodNamespace} \
-             -f charts/hellocicd/Values.yaml --set \
-             serviceType=LoadBalancer,image=${prodImageTag},domain=${prodDomain},env=${prodEnviron},release=${prodRelease},replicas=${replicas}
-              """
-        }
-      }
-
-      input(message: 'Do you want to destroy this deployment?')
-
-      stage('Destroy') {
-        container('helm') {
-          sh "helm delete --purge ${helmRelease}"
+        if (env.BRANCH_NAME == 'master') {
+            imageTag = prodImageTag
+            domain = prodDomain
+            environ = prodEnviron
+            release = prodRelease
+            namespace = prodNamespace
+            helmRelease = prodHelmRelease
         }
 
-        container('kubectl') {
-          sh "kubectl delete namespace ${namespace}"
+        checkout scm
+
+        stage('Build') {
+            sh "docker build -t ${imageTag} ."
         }
-      }
+
+        stage('Test') {
+            println "No tests yet :)"
+        }
+
+        stage('Deliver') {
+            withCredentials([[$class: 'UsernamePasswordMultiBinding',
+                    credentialsId: 'rtnpro-docker-creds',
+                    usernameVariable: 'username',
+                    passwordVariable: 'password']]) {
+                sh "docker login -u ${username} -p ${password}"
+                sh "docker push ${imageTag}"
+            }
+        }
+
+        stage('Deploy') {
+            container('helm') {
+            sh """
+                helm upgrade --install ${helmRelease} \
+                charts/hellocicd \
+                --namespace ${namespace} \
+                -f charts/hellocicd/Values.yaml --set \
+                serviceType=LoadBalancer,image=${imageTag},domain=${domain},env=${environ},release=${release},replicas=${replicas}
+                """
+            }
+        }
+
+        if (env.BRANCH_NAME == 'master') {
+            return
+        }
+
+        input(message: 'Do you want to proceed with canary?')
+
+        stage('Canary') {
+            container('helm') {
+            sh """
+               helm upgrade --install ${prodHelmRelease} \
+               charts/hellocicd \
+               --namespace ${prodNamespace} \
+               -f charts/hellocicd/Values.yaml --set \
+               serviceType=LoadBalancer,image=${prodImageTag},domain=${prodDomain},env=${prodEnviron},release=${prodRelease},replicas=${replicas},canary.replicas=1,canary.release=${release},canary.image=${imageTag}
+                """
+            }
+        }
+
+        input(message: 'Test canary changes? Rollback canary?')
+
+        stage('Rollback canary') {
+            container('helm') {
+            sh """
+               helm upgrade --install ${prodHelmRelease} \
+               charts/hellocicd \
+               --namespace ${prodNamespace} \
+               -f charts/hellocicd/Values.yaml --set \
+               serviceType=LoadBalancer,image=${prodImageTag},domain=${prodDomain},env=${prodEnviron},release=${prodRelease},replicas=${replicas}
+                """
+            }
+        }
+
+        input(message: 'Do you want to destroy this deployment?')
+
+        stage('Destroy') {
+            container('helm') {
+                sh "helm delete --purge ${helmRelease}"
+            }
+
+            container('kubectl') {
+                sh "kubectl delete namespace ${namespace}"
+            }
+        }
     }
 }
