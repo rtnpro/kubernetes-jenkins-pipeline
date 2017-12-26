@@ -11,36 +11,37 @@ podTemplate(
         hostPathVolume(mountPath: '/var/run/docker.sock', hostPath: '/var/run/docker.sock')
     ]
 ){
+
+    def project = "rtnpro"
+    def appName = "hellocicd"
+
+    def release = env.BRANCH_NAME
+    def imageTag = "docker.io/${project}/${appName}:${release}"
+    def domain = "${appName}-${release}${env.HELLOCICD_DOMAIN}"
+    def environ = "staging"
+    def namespace = "${appName}-${release}"
+    def helmRelease = namespace
+    def replicas = 2
+
+    def prodRelease = "master"
+    def prodImageTag = "docker.io/${project}/${appName}:${prodRelease}"
+    def prodDomain = "${appName}${env.HELLOCICD_DOMAIN}"
+    def prodEnviron = "production"
+    def prodNamespace = "${appName}"
+    def prodHelmRelease = prodNamespace
+
+    if (env.BRANCH_NAME == 'master') {
+        imageTag = prodImageTag
+        domain = prodDomain
+        environ = prodEnviron
+        release = prodRelease
+        namespace = prodNamespace
+        helmRelease = prodHelmRelease
+    }
+
+    checkout scm
+
     node('jenkins-pipeline') {
-
-        def project = "rtnpro"
-        def appName = "hellocicd"
-
-        def release = env.BRANCH_NAME
-        def imageTag = "docker.io/${project}/${appName}:${release}"
-        def domain = "${appName}-${release}${env.HELLOCICD_DOMAIN}"
-        def environ = "staging"
-        def namespace = "${appName}-${release}"
-        def helmRelease = namespace
-        def replicas = 2
-
-        def prodRelease = "master"
-        def prodImageTag = "docker.io/${project}/${appName}:${prodRelease}"
-        def prodDomain = "${appName}${env.HELLOCICD_DOMAIN}"
-        def prodEnviron = "production"
-        def prodNamespace = "${appName}"
-        def prodHelmRelease = prodNamespace
-
-        if (env.BRANCH_NAME == 'master') {
-            imageTag = prodImageTag
-            domain = prodDomain
-            environ = prodEnviron
-            release = prodRelease
-            namespace = prodNamespace
-            helmRelease = prodHelmRelease
-        }
-
-        checkout scm
 
         stage('Build') {
             sh "docker build -t ${imageTag} ."
@@ -75,8 +76,11 @@ podTemplate(
         if (env.BRANCH_NAME == 'master') {
             return
         }
+    }
 
-        input(message: 'Do you want to proceed with canary?')
+    input(message: 'Do you want to proceed with canary?')
+
+    node('jenkins-pipeline') {
 
         stage('Canary') {
             container('helm') {
@@ -89,8 +93,11 @@ podTemplate(
                 """
             }
         }
+    }
 
-        input(message: 'Test canary changes? Rollback canary?')
+    input(message: 'Test canary changes? Rollback canary?')
+
+    node('jenkins-pipeline') {
 
         stage('Rollback canary') {
             container('helm') {
@@ -103,8 +110,11 @@ podTemplate(
                 """
             }
         }
+    }
 
-        input(message: 'Do you want to destroy this deployment?')
+    input(message: 'Do you want to destroy this deployment?')
+
+    node('jenkins-pipeline') {
 
         stage('Destroy') {
             container('helm') {
