@@ -1,5 +1,32 @@
 #!/usr/bin/groovy
 
+def project = "rtnpro"
+def appName = "hellocicd"
+
+def release = env.BRANCH_NAME
+def imageTag = "docker.io/${project}/${appName}:${release}"
+def domain = "${appName}-${release}${env.HELLOCICD_DOMAIN}"
+def environ = "staging"
+def namespace = "${appName}-${release}"
+def helmRelease = namespace
+def replicas = 2
+
+def prodRelease = "master"
+def prodImageTag = "docker.io/${project}/${appName}:${prodRelease}"
+def prodDomain = "${appName}${env.HELLOCICD_DOMAIN}"
+def prodEnviron = "production"
+def prodNamespace = "${appName}"
+def prodHelmRelease = prodNamespace
+
+if (env.BRANCH_NAME == 'master') {
+    imageTag = prodImageTag
+    domain = prodDomain
+    environ = prodEnviron
+    release = prodRelease
+    namespace = prodNamespace
+    helmRelease = prodHelmRelease
+}
+
 podTemplate(
     label: 'jenkins-pipeline',
     containers: [
@@ -8,105 +35,79 @@ podTemplate(
         containerTemplate(name: 'kubectl', image: 'lachlanevenson/k8s-kubectl:v1.8.2', command: 'cat', ttyEnabled: true, serviceAccount: 'ci-jenkins')
     ],
     volumes: [
-        hostPathVolume(mountPath: '/var/run/docker.sock', hostPath: '/var/run/docker.sock')
+        hostPathVolume(mountPath: '/var/run/docker.sock', hostPath: '/var/run/docker.sock'),
+        persistentVolumeClaim(mountPath: '/home/jenkins', claimName: 'jenkins-workspace')
     ]
 ){
+
     node('jenkins-pipeline') {
-
-        def project = "rtnpro"
-        def appName = "hellocicd"
-
-        def release = env.BRANCH_NAME
-        def imageTag = "docker.io/${project}/${appName}:${release}"
-        def domain = "${appName}-${release}${env.HELLOCICD_DOMAIN}"
-        def environ = "staging"
-        def namespace = "${appName}-${release}"
-        def helmRelease = namespace
-        def replicas = 2
-
-        def prodRelease = "master"
-        def prodImageTag = "docker.io/${project}/${appName}:${prodRelease}"
-        def prodDomain = "${appName}${env.HELLOCICD_DOMAIN}"
-        def prodEnviron = "production"
-        def prodNamespace = "${appName}"
-        def prodHelmRelease = prodNamespace
-
-        if (env.BRANCH_NAME == 'master') {
-            imageTag = prodImageTag
-            domain = prodDomain
-            environ = prodEnviron
-            release = prodRelease
-            namespace = prodNamespace
-            helmRelease = prodHelmRelease
-        }
-
         checkout scm
 
         stage('Build') {
-            sh "docker build -t ${imageTag} ."
-        }
+          sh "docker build -t ${imageTag} ."
 
-        stage('Test') {
-            println "No tests yet :)"
-        }
-
-        stage('Deliver') {
-            withCredentials([[$class: 'UsernamePasswordMultiBinding',
-                    credentialsId: 'rtnpro-docker-creds',
-                    usernameVariable: 'username',
-                    passwordVariable: 'password']]) {
-                sh "docker login -u ${username} -p ${password}"
-                sh "docker push ${imageTag}"
-            }
+          withCredentials([[$class: 'UsernamePasswordMultiBinding',
+                  credentialsId: 'rtnpro-docker-creds',
+                  usernameVariable: 'username',
+                  passwordVariable: 'password']]) {
+              sh "docker login -u ${username} -p ${password}"
+              sh "docker push ${imageTag}"
+          }
         }
 
         stage('Deploy') {
             container('helm') {
-            sh """
-                helm upgrade --install ${helmRelease} \
-                charts/hellocicd \
-                --namespace ${namespace} \
-                -f charts/hellocicd/Values.yaml --set \
-                serviceType=LoadBalancer,image=${imageTag},domain=${domain},env=${environ},release=${release},replicas=${replicas}
-                """
+                sh """
+                    helm upgrade --install ${helmRelease} \
+                    charts/hellocicd \
+                    --namespace ${namespace} \
+                    -f charts/hellocicd/Values.yaml --set \
+                    serviceType=LoadBalancer,image=${imageTag},domain=${domain},env=${environ},release=${release},replicas=${replicas}
+                    """
             }
         }
+    }
 
-        if (env.BRANCH_NAME == 'master') {
-            return
-        }
 
-        input(message: 'Do you want to proceed with canary?')
+    if (env.BRANCH_NAME == 'master') {
+        return
+    }
 
-        stage('Canary') {
+    input(message: 'Do you want to proceed with canary?')
+
+    stage('Canary') {
+        node('jenkins-pipeline') {
+            // checkout scm
             container('helm') {
-            sh """
-               helm upgrade --install ${prodHelmRelease} \
-               charts/hellocicd \
-               --namespace ${prodNamespace} \
-               -f charts/hellocicd/Values.yaml --set \
-               serviceType=LoadBalancer,image=${prodImageTag},domain=${prodDomain},env=${prodEnviron},release=${prodRelease},replicas=${replicas},canary.replicas=1,canary.release=${release},canary.image=${imageTag}
-                """
+                sh """
+                   helm upgrade --install ${prodHelmRelease} \
+                   charts/hellocicd \
+                   --namespace ${prodNamespace} \
+                   -f charts/hellocicd/Values.yaml --set \
+                   serviceType=LoadBalancer,image=${prodImageTag},domain=${prodDomain},env=${prodEnviron},release=${prodRelease},replicas=${replicas},canary.replicas=1,canary.release=${release},canary.image=${imageTag}
+                    """
             }
         }
 
         input(message: 'Test canary changes? Rollback canary?')
 
-        stage('Rollback canary') {
+        node('jenkins-pipeline') {
             container('helm') {
-            sh """
-               helm upgrade --install ${prodHelmRelease} \
-               charts/hellocicd \
-               --namespace ${prodNamespace} \
-               -f charts/hellocicd/Values.yaml --set \
-               serviceType=LoadBalancer,image=${prodImageTag},domain=${prodDomain},env=${prodEnviron},release=${prodRelease},replicas=${replicas}
-                """
+                sh """
+                   helm upgrade --install ${prodHelmRelease} \
+                   charts/hellocicd \
+                   --namespace ${prodNamespace} \
+                   -f charts/hellocicd/Values.yaml --set \
+                   serviceType=LoadBalancer,image=${prodImageTag},domain=${prodDomain},env=${prodEnviron},release=${prodRelease},replicas=${replicas}
+                    """
             }
         }
+    }
 
-        input(message: 'Do you want to destroy this deployment?')
+    input(message: 'Do you want to destroy this deployment?')
 
-        stage('Destroy') {
+    stage('Destroy') {
+        node('jenkins-pipeline') {
             container('helm') {
                 sh "helm delete --purge ${helmRelease}"
             }
