@@ -44,15 +44,15 @@ podTemplate(
         checkout scm
 
         stage('Build') {
-          sh "docker build -t ${imageTag} ."
+            sh "docker build -t ${imageTag} ."
 
-          withCredentials([[$class: 'UsernamePasswordMultiBinding',
-                  credentialsId: 'rtnpro-docker-creds',
-                  usernameVariable: 'username',
-                  passwordVariable: 'password']]) {
-              sh "docker login -u ${username} -p ${password}"
-              sh "docker push ${imageTag}"
-          }
+            withCredentials([[$class: 'UsernamePasswordMultiBinding',
+                    credentialsId: 'rtnpro-docker-creds',
+                    usernameVariable: 'username',
+                    passwordVariable: 'password']]) {
+                sh "docker login -u ${username} -p ${password}"
+                sh "docker push ${imageTag}"
+            }
         }
 
         stage('Deploy') {
@@ -73,40 +73,42 @@ podTemplate(
         return
     }
 
-    input(message: 'Do you want to proceed with canary?')
-
-    stage('Canary') {
-        node('jenkins-pipeline') {
-            // checkout scm
-            container('helm') {
-                sh """
-                   helm upgrade --install ${prodHelmRelease} \
-                   charts/hellocicd \
-                   --namespace ${prodNamespace} \
-                   -f charts/hellocicd/Values.yaml --set \
-                   serviceType=LoadBalancer,image=${prodImageTag},domain=${prodDomain},env=${prodEnviron},release=${prodRelease},replicas=${replicas},canary.replicas=1,canary.release=${release},canary.image=${imageTag}
-                    """
+    try {
+        stage('Canary') {
+            input(message: 'Do you want to proceed with canary?')
+            node('jenkins-pipeline') {
+                container('helm') {
+                    sh """
+                       helm upgrade --install ${prodHelmRelease} \
+                       charts/hellocicd \
+                       --namespace ${prodNamespace} \
+                       -f charts/hellocicd/Values.yaml --set \
+                       serviceType=LoadBalancer,image=${prodImageTag},domain=${prodDomain},env=${prodEnviron},release=${prodRelease},replicas=${replicas},canary.replicas=1,canary.release=${release},canary.image=${imageTag}
+                        """
+                }
             }
-        }
 
-        input(message: 'Test canary changes? Rollback canary?')
+            input(message: 'Test canary changes? Rollback canary?')
 
-        node('jenkins-pipeline') {
-            container('helm') {
-                sh """
-                   helm upgrade --install ${prodHelmRelease} \
-                   charts/hellocicd \
-                   --namespace ${prodNamespace} \
-                   -f charts/hellocicd/Values.yaml --set \
-                   serviceType=LoadBalancer,image=${prodImageTag},domain=${prodDomain},env=${prodEnviron},release=${prodRelease},replicas=${replicas}
-                    """
+            node('jenkins-pipeline') {
+                container('helm') {
+                    sh """
+                       helm upgrade --install ${prodHelmRelease} \
+                       charts/hellocicd \
+                       --namespace ${prodNamespace} \
+                       -f charts/hellocicd/Values.yaml --set \
+                       serviceType=LoadBalancer,image=${prodImageTag},domain=${prodDomain},env=${prodEnviron},release=${prodRelease},replicas=${replicas}
+                        """
+                }
             }
         }
     }
-
-    input(message: 'Do you want to destroy this deployment?')
+    catch (error) {
+        println "Skipping canary..."
+    }
 
     stage('Destroy') {
+        input(message: 'Do you want to destroy this deployment?')
         node('jenkins-pipeline') {
             container('helm') {
                 sh "helm delete --purge ${helmRelease}"
