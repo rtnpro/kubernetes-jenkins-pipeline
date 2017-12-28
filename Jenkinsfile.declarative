@@ -1,0 +1,109 @@
+pipeline {
+    agent {
+        kubernetes {
+            label 'jenkins-pipeline'
+        }
+    }
+
+    environment {
+      PROJECT = "hellocicd"
+      IMAGE_TAG = "docker.io/rtnpro/${env.PROJECT}:${env.BRANCH_NAME}"
+      PROD_BRANCH = "master"
+      DOMAIN = "${env.PROJECT}-${env.BRANCH_NAME}${env.HELLOCICD_DOMAIN}"
+    }
+
+    stages {
+        node {
+            reuseNode true
+
+            stage('Build') {
+                steps {
+                    step('Build image') {
+                        sh "docker build -t ${imageTag}"
+                    }
+
+                    step('Test image') {
+                        println "No tests to run."
+                    }
+
+                    step('Push image') {
+                        withCredentials([[$class: 'UsernamePasswordMultiBinding',
+                                credentialsId: 'rtnpro-docker-creds',
+                                usernameVariable: 'username',
+                                passwordVariable: 'password']]) {
+                            sh "docker login -u ${username} -p ${password}"
+                            sh "docker push ${imageTag}"
+                        }
+                    }
+                }
+            }
+
+            stage('Deploy') {
+                container('helm') {
+                    sh """
+                        helm upgrade --install ${helmRelease} \
+                        charts/hellocicd \
+                        --namespace ${namespace} \
+                        -f charts/hellocicd/Values.yaml --set \
+                        serviceType=LoadBalancer,image=${imageTag},domain=${domain},env=${environ},release=${release},replicas=${replicas}
+                        """
+                }
+            }
+        }
+
+        input(message: 'Do you want to proceed with canary?')
+
+        stage('Canary') {
+            steps {
+                step('Deploy') {
+                    node('jenkins-pipeline') {
+                        container('helm') {
+                            sh """
+                               helm upgrade --install ${prodHelmRelease} \
+                               charts/hellocicd \
+                               --namespace ${prodNamespace} \
+                               -f charts/hellocicd/Values.yaml --set \
+                               serviceType=LoadBalancer,image=${prodImageTag},domain=${prodDomain},env=${prodEnviron},release=${prodRelease},replicas=${replicas},canary.replicas=1,canary.release=${release},canary.image=${imageTag}
+                                """
+                        }
+                    }
+                }
+
+                input(message: 'Test canary changes? Rollback canary?')
+
+                step('Rollback') {
+                    node('jenkins-pipeline') {
+                        container('helm') {
+                            sh """
+                               helm upgrade --install ${prodHelmRelease} \
+                               charts/hellocicd \
+                               --namespace ${prodNamespace} \
+                               -f charts/hellocicd/Values.yaml --set \
+                               serviceType=LoadBalancer,image=${prodImageTag},domain=${prodDomain},env=${prodEnviron},release=${prodRelease},replicas=${replicas}
+                                """
+                        }
+                    }
+                }
+            }
+        }
+
+
+        stage('Destroy') {
+            input(message: 'Do you want to destroy this deployment?')
+
+            steps {
+                step('Delete helm release') {
+                    container('helm') {
+                        sh "helm delete --purge ${helmRelease}"
+                    }
+                }
+
+                step('Delete kubernetes namespace') {
+                    container('kubectl') {
+                        sh "kubectl delete namespace ${namespace}"
+                    }
+                }
+            }
+        }
+    }
+}
