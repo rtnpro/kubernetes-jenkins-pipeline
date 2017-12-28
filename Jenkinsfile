@@ -12,10 +12,10 @@ def replicas = 2
 
 def canaryReplicas = 1
 
-def prodBranch = 'master'
-def prodNamespace = "${appName}-${branch}"
+def stableBranch = 'master'
+def stableNamespace = "${appName}-${stableBranch}"
 
-if (env.BRANCH_NAME == prodBranch) {
+if (env.BRANCH_NAME == stableBranch) {
     domain = "${appName}${env.HELLOCICD_DOMAIN}"    
 }
 
@@ -72,7 +72,7 @@ podTemplate(
                     sh """
                        helm upgrade --install ${helmRelease}-canary \
                        charts/hellocicd \
-                       --namespace ${prodNamespace} \
+                       --namespace ${stableNamespace} \
                        -f charts/hellocicd/Values.yaml --set \
                        enableService=false,image=${imageTag},replicas=${canaryReplicas},release=${branch},track=canary
                         """
