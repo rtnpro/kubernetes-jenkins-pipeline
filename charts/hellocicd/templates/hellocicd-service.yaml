@@ -10,7 +10,7 @@ spec:
     targetPort: 5000
     protocol: TCP
   selector:
-    role: backend
+    tier: backend
     app: {{ .Values.name }}
   type: {{ .Values.serviceType }}
 {{- end }}
