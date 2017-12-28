@@ -1,3 +1,4 @@
+{{- if .Values.enableService }}
 kind: Service
 apiVersion: v1
 metadata:
@@ -12,3 +13,4 @@ spec:
     role: backend
     app: {{ .Values.name }}
   type: {{ .Values.serviceType }}
+{{- end }}
