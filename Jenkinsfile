@@ -11,6 +11,7 @@ def helmRelease = namespace
 def replicas = 2
 
 def canaryReplicas = 1
+def canaryHelmRelease = "${helmRelease}-canary"
 
 def stableBranch = 'master'
 def stableNamespace = "${appName}-${stableBranch}"
@@ -70,7 +71,7 @@ podTemplate(
             node('jenkins-pipeline') {
                 container('helm') {
                     sh """
-                       helm upgrade --install ${helmRelease}-canary \
+                       helm upgrade --install ${canaryHelmRelease} \
                        charts/hellocicd \
                        --namespace ${stableNamespace} \
                        -f charts/hellocicd/Values.yaml --set \
